@@ -1,14 +1,16 @@
 import { useEffect, useState } from 'react'
 import { Editor } from './components/Editor'
+import { ConvertDialog } from './components/ConvertDialog'
 import { ItemCanvas } from './components/ItemCanvas'
 import { SetGenerator } from './components/SetGenerator'
 import { Uploader } from './components/Uploader'
+import { convertSet } from './lib/convertSet'
 import { exportZip } from './lib/exportZip'
 import { ensureFonts } from './lib/fonts'
 import { generateSet, newId, newItem } from './lib/presets'
 import { SPECS, type Mode } from './lib/specs'
 import { clearProject, loadProject, saveProject } from './lib/storage'
-import type { BackgroundSettings, SourceImage, StickerItem } from './lib/types'
+import type { BackgroundSettings, ModeSet, SourceImage, StickerItem } from './lib/types'
 
 export default function App() {
   const [mode, setMode] = useState<Mode>('stamp')
@@ -22,18 +24,23 @@ export default function App() {
   const [loaded, setLoaded] = useState(false)
   const [restored, setRestored] = useState(false)
   const [saveError, setSaveError] = useState('')
+  const [stash, setStash] = useState<Partial<Record<Mode, ModeSet>>>({})
+  const [converting, setConverting] = useState<Mode | null>(null)
+  const [notice, setNotice] = useState('')
 
   // 前回の作業を復元
   useEffect(() => {
     loadProject()
       .then((p) => {
-        if (!p || (!p.sources.length && !p.items.length)) return
+        const stashed = Object.values(p?.stash ?? {}).some((set) => set?.items.length)
+        if (!p || (!p.sources.length && !p.items.length && !stashed)) return
         setMode(p.mode)
         setCount(p.count)
         setSources(p.sources)
         setItems(p.items)
         setSelectedId(p.selectedId)
         setMainId(p.mainId)
+        setStash(p.stash ?? {})
         setRestored(true)
       })
       .catch(() => setSaveError('前回の作業を読み込めませんでした'))
@@ -44,12 +51,12 @@ export default function App() {
   useEffect(() => {
     if (!loaded) return
     const timer = setTimeout(() => {
-      saveProject({ mode, count, sources, items, selectedId, mainId })
+      saveProject({ mode, count, sources, items, selectedId, mainId, stash })
         .then(() => setSaveError(''))
         .catch(() => setSaveError('自動保存に失敗しました（ブラウザの保存容量が不足している可能性があります）'))
     }, 600)
     return () => clearTimeout(timer)
-  }, [loaded, mode, count, sources, items, selectedId, mainId])
+  }, [loaded, mode, count, sources, items, selectedId, mainId, stash])
 
   const startOver = async () => {
     if (!confirm('画像とスタンプをすべて消して、最初から作り直します。よろしいですか？')) return
@@ -58,8 +65,10 @@ export default function App() {
     setItems([])
     setSelectedId(null)
     setMainId(null)
+    setStash({})
     setWarnings([])
     setRestored(false)
+    setNotice('')
   }
 
   const spec = SPECS[mode]
@@ -68,14 +77,43 @@ export default function App() {
   const mainIndex = Math.max(0, items.findIndex((i) => i.id === mainId))
   const findSource = (id: string | null) => sources.find((s) => s.id === id)
 
-  const switchMode = (m: Mode) => {
-    if (m === mode) return
-    if (items.length && !confirm(`${SPECS[m].label}モードに切り替えると、作成中の${spec.label}は消えます。よろしいですか？`)) return
+  /** モードを切り替える。いまの作業内容は取っておき、切り替え先の作業内容を戻す */
+  const switchMode = (m: Mode, next: ModeSet | undefined = stash[m]) => {
+    if (m === mode && !next) return
+    setStash((s) => ({ ...s, [mode]: { items, selectedId, mainId, count }, [m]: undefined }))
     setMode(m)
-    setItems([])
-    setSelectedId(null)
-    setCount(SPECS[m].counts[0])
+    setItems(next?.items ?? [])
+    setSelectedId(next?.selectedId ?? next?.items[0]?.id ?? null)
+    setMainId(next?.mainId ?? null)
+    setCount(next?.count ?? SPECS[m].counts[0])
+    setWarnings([])
+    setNotice('')
   }
+
+  /** 作業中のモード・取っておいたモードの両方のスタンプに同じ変更を加える */
+  const mapAllItems = (fn: (i: StickerItem) => StickerItem) => {
+    setItems((list) => list.map(fn))
+    setStash((s) =>
+      Object.fromEntries(Object.entries(s).map(([m, set]) => [m, set && { ...set, items: set.items.map(fn) }])),
+    )
+  }
+
+  const itemsOf = (m: Mode) => (m === mode ? items : (stash[m]?.items ?? []))
+
+  /** スタンプ（またはアニメスタンプ）を絵文字に変換し、絵文字モードに切り替える */
+  const convertToEmoji = async (from: Mode, keepText: boolean) => {
+    const converted = await convertSet(itemsOf(from).slice(0, 40), sources, SPECS[from], SPECS.emoji, keepText)
+    switchMode('emoji', {
+      items: converted,
+      selectedId: converted[0]?.id ?? null,
+      mainId: null,
+      count: Math.min(40, Math.max(8, converted.length)),
+    })
+    setConverting(null)
+    setNotice(`${SPECS[from].label} ${converted.length} 枚を絵文字に変換しました。小さく表示されるので、1つずつ見え方を確認してください。`)
+  }
+
+  const convertibleFrom = (['stamp', 'anim'] as Mode[]).filter((m) => itemsOf(m).length > 0)
 
   const updateItem = (next: StickerItem) => setItems((list) => list.map((i) => (i.id === next.id ? next : i)))
 
@@ -84,12 +122,12 @@ export default function App() {
 
   const removeSource = (id: string) => {
     setSources((list) => list.filter((s) => s.id !== id))
-    setItems((list) => list.map((i) => (i.sourceId === id ? { ...i, sourceId: null } : i)))
+    mapAllItems((i) => (i.sourceId === id ? { ...i, sourceId: null } : i))
   }
 
   const replaceSource = (id: string, parts: SourceImage[]) => {
     setSources((list) => list.flatMap((s) => (s.id === id ? parts : [s])))
-    setItems((list) => list.map((i) => (i.sourceId === id ? { ...i, sourceId: parts[0]?.id ?? null } : i)))
+    mapAllItems((i) => (i.sourceId === id ? { ...i, sourceId: parts[0]?.id ?? null } : i))
   }
 
   const generate = (phrases: string[], colorful: boolean) => {
@@ -194,6 +232,33 @@ export default function App() {
         </div>
       )}
       {saveError && <p className="error">{saveError}</p>}
+      {notice && (
+        <div className="notice">
+          {notice}
+          <button className="icon" onClick={() => setNotice('')} aria-label="閉じる">
+            ×
+          </button>
+        </div>
+      )}
+      {mode === 'emoji' && convertibleFrom.length > 0 && (
+        <div className="convert-banner">
+          <span>作成済みのスタンプから絵文字を作れます。</span>
+          {convertibleFrom.map((m) => (
+            <button key={m} onClick={() => setConverting(m)}>
+              {SPECS[m].label}（{itemsOf(m).length}枚）から変換
+            </button>
+          ))}
+        </div>
+      )}
+      {converting && (
+        <ConvertDialog
+          from={converting}
+          count={itemsOf(converting).length}
+          existing={mode === 'emoji' ? items.length : (stash.emoji?.items.length ?? 0)}
+          onCancel={() => setConverting(null)}
+          onConvert={(keepText) => convertToEmoji(converting, keepText)}
+        />
+      )}
 
       <section className="card">
         <h2>
@@ -289,6 +354,15 @@ export default function App() {
           <p className="hint">
             ダウンロードしたZIPは、そのまま LINE Creators Market の「ZIPファイルでアップロード」から登録できます。
           </p>
+          {mode !== 'emoji' && (
+            <div className="convert-box">
+              <h3>このスタンプを絵文字にもする</h3>
+              <p className="hint">
+                作成した{spec.label}を、絵文字（180×180px）の規格に合わせて作り直します。元の{spec.label}は残ります。
+              </p>
+              <button onClick={() => setConverting(mode)}>絵文字に変換…</button>
+            </div>
+          )}
         </section>
       )}
     </div>

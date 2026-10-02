@@ -1,7 +1,7 @@
 // 作業内容をブラウザの IndexedDB に保存・復元する（外部には送信しない）
 import { canvasToBlob, imageToCanvas } from './render'
 import type { Mode } from './specs'
-import type { BackgroundSettings, SourceImage, StickerItem } from './types'
+import type { BackgroundSettings, ModeSet, SourceImage, StickerItem } from './types'
 
 const DB_NAME = 'line-sticker-maker'
 const STORE = 'project'
@@ -15,6 +15,8 @@ export interface Project {
   items: StickerItem[]
   selectedId: string | null
   mainId: string | null
+  /** いま表示していないモードの作業内容 */
+  stash?: Partial<Record<Mode, ModeSet>>
 }
 
 interface StoredSource {

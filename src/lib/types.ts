@@ -57,3 +57,11 @@ export interface StickerItem {
   /** アニメスタンプのみ */
   animation?: AnimationSettings
 }
+
+/** モードごとの作業内容（別のモードに切り替えても残す） */
+export interface ModeSet {
+  items: StickerItem[]
+  selectedId: string | null
+  mainId: string | null
+  count: number
+}

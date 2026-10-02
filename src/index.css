@@ -551,3 +551,38 @@ button.small {
 .flipbook {
   margin: 8px 0;
 }
+
+/* 絵文字への変換 */
+.convert-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  background: #fff8e6;
+  border: 1px solid #f5dfa3;
+  border-radius: 10px;
+  padding: 8px 12px;
+  margin-bottom: 16px;
+}
+.convert-box {
+  margin-top: 16px;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+.convert-box h3 {
+  font-size: 0.95rem;
+  margin: 0;
+}
+fieldset.options {
+  border: none;
+  padding: 0;
+  margin: 10px 0;
+  display: grid;
+  gap: 6px;
+}
+fieldset.options .check {
+  align-items: flex-start;
+}
+fieldset.options input {
+  margin-top: 5px;
+}
