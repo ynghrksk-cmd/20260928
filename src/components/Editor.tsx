@@ -1,9 +1,11 @@
-import { useRef, type PointerEvent } from 'react'
+import { useRef, useState, type PointerEvent } from 'react'
+import { ANIMATION_LIMITS, ANIMATION_PRESETS, defaultAnimation, normalizeAnimation, type AnimationSettings } from '../lib/animation'
 import { FONTS } from '../lib/presets'
 import { guessBackground, type RGB } from '../lib/pixels'
 import { layoutText } from '../lib/render'
 import type { ModeSpec } from '../lib/specs'
 import type { BackgroundSettings, SourceImage, StickerItem } from '../lib/types'
+import { AnimatedPreview } from './AnimatedPreview'
 import { ItemCanvas } from './ItemCanvas'
 import { SourceThumb } from './Uploader'
 
@@ -16,7 +18,7 @@ interface Props {
   isMain: boolean
   onChange: (item: StickerItem) => void
   onBackgroundChange: (sourceId: string, bg: BackgroundSettings) => void
-  onApplyToAll: (part: 'textStyle' | 'outline' | 'transform') => void
+  onApplyToAll: (part: 'textStyle' | 'outline' | 'transform' | 'animation') => void
   onDuplicate: () => void
   onDelete: () => void
   onMove: (delta: -1 | 1) => void
@@ -31,6 +33,7 @@ let measureCtx: CanvasRenderingContext2D | null = null
 export function Editor(props: Props) {
   const { item, index, total, spec, sources, onChange } = props
   const source = sources.find((s) => s.id === item.sourceId)
+  const [playing, setPlaying] = useState(false)
   const drag = useRef<{ target: 'image' | 'text'; x: number; y: number; start: StickerItem } | null>(null)
 
   const toCanvas = (e: PointerEvent<HTMLElement>) => {
@@ -39,6 +42,7 @@ export function Editor(props: Props) {
   }
 
   const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
+    if (playing) return
     const p = toCanvas(e)
     measureCtx ??= document.createElement('canvas').getContext('2d')
     const box = layoutText(measureCtx!, item, spec)?.box
@@ -66,6 +70,9 @@ export function Editor(props: Props) {
   const setT = (patch: Partial<StickerItem['transform']>) => onChange({ ...item, transform: { ...item.transform, ...patch } })
   const setText = (patch: Partial<StickerItem['text']>) => onChange({ ...item, text: { ...item.text, ...patch } })
   const setOutline = (patch: Partial<StickerItem['outline']>) => onChange({ ...item, outline: { ...item.outline, ...patch } })
+  const anim = item.animation ?? defaultAnimation()
+  const setAnim = (patch: Partial<AnimationSettings>) =>
+    onChange({ ...item, animation: normalizeAnimation({ ...anim, ...patch }) })
   const setBg = (patch: Partial<BackgroundSettings>) =>
     source && props.onBackgroundChange(source.id, { ...source.background, ...patch })
 
@@ -89,7 +96,11 @@ export function Editor(props: Props) {
           onPointerUp={() => (drag.current = null)}
           onPointerCancel={() => (drag.current = null)}
         >
-          <ItemCanvas item={item} source={source} spec={spec} className="preview-canvas" />
+          {spec.animated && playing ? (
+            <AnimatedPreview item={item} sources={sources} spec={spec} />
+          ) : (
+            <ItemCanvas item={item} source={source} spec={spec} className="preview-canvas" />
+          )}
           <div
             className="safe-area"
             style={{
@@ -101,6 +112,11 @@ export function Editor(props: Props) {
           {index + 1} / {total} 枚目　{spec.width}×{spec.height}px ・ 画像や文字はドラッグで移動できます（点線は余白の目安）
         </p>
         <div className="toolbar">
+          {spec.animated && (
+            <button className={playing ? 'on' : ''} onClick={() => setPlaying((p) => !p)}>
+              {playing ? '■ 停止して編集' : '▶ 動きを再生'}
+            </button>
+          )}
           <button onClick={() => props.onMove(-1)} disabled={index === 0}>
             ← 前へ
           </button>
@@ -192,6 +208,62 @@ export function Editor(props: Props) {
               <input type="checkbox" checked={source.background.contiguous} onChange={(e) => setBg({ contiguous: e.target.checked })} />
               外側から続く部分だけ消す（キャラの白目などを残す）
             </label>
+          </section>
+        )}
+
+        {spec.animated && (
+          <section>
+            <h3>アニメーション</h3>
+            <div className="chips">
+              {ANIMATION_PRESETS.map((p) => (
+                <button
+                  key={p.value}
+                  className={`chip ${anim.preset === p.value ? 'on' : ''}`}
+                  aria-pressed={anim.preset === p.value}
+                  onClick={() => setAnim({ preset: p.value })}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+            {anim.preset === 'flipbook' && (
+              <div className="flipbook">
+                <p className="hint">基本の画像のあとに切り替える画像を、表示したい順にクリック（もう一度押すと外れます）</p>
+                <div className="source-picker">
+                  {sources
+                    .filter((s) => s.id !== item.sourceId)
+                    .map((s) => {
+                      const order = anim.flipbookSources.indexOf(s.id)
+                      return (
+                        <button
+                          key={s.id}
+                          className={order >= 0 ? 'on' : ''}
+                          title={s.name}
+                          onClick={() =>
+                            setAnim({
+                              flipbookSources:
+                                order >= 0 ? anim.flipbookSources.filter((id) => id !== s.id) : [...anim.flipbookSources, s.id],
+                            })
+                          }
+                        >
+                          <SourceThumb source={s} />
+                          {order >= 0 && <span className="order">{order + 2}</span>}
+                        </button>
+                      )
+                    })}
+                </div>
+                {sources.length < 2 && <p className="hint">ポーズ違いの画像を2枚以上アップロードすると使えます。</p>}
+              </div>
+            )}
+            <Range label="フレーム数" min={ANIMATION_LIMITS.minFrames} max={ANIMATION_LIMITS.maxFrames} step={1} value={anim.frames} onChange={(v) => setAnim({ frames: v })} format={(v) => `${v}枚`} />
+            <Range label="1回の長さ" min={0.3} max={4} step={0.1} value={anim.duration} onChange={(v) => setAnim({ duration: v })} format={(v) => `${v.toFixed(1)}秒`} />
+            <Range label="くり返し" min={1} max={ANIMATION_LIMITS.maxLoops} step={1} value={anim.loops} onChange={(v) => setAnim({ loops: v })} format={(v) => `${v}回`} />
+            <p className="hint">
+              合計 {(anim.duration * anim.loops).toFixed(1)} 秒（LINE の上限は 4 秒。超える場合はくり返し回数を自動で減らします）
+            </p>
+            <button className="link" onClick={() => props.onApplyToAll('animation')}>
+              この動きを全てに適用
+            </button>
           </section>
         )}
 

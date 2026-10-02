@@ -17,7 +17,7 @@ export default function App() {
   const [items, setItems] = useState<StickerItem[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [mainId, setMainId] = useState<string | null>(null)
-  const [exporting, setExporting] = useState(false)
+  const [exporting, setExporting] = useState('')
   const [warnings, setWarnings] = useState<string[]>([])
   const [loaded, setLoaded] = useState(false)
   const [restored, setRestored] = useState(false)
@@ -106,12 +106,13 @@ export default function App() {
     setSelectedId(item.id)
   }
 
-  const applyToAll = (part: 'textStyle' | 'outline' | 'transform') => {
+  const applyToAll = (part: 'textStyle' | 'outline' | 'transform' | 'animation') => {
     if (!selected) return
     setItems((list) =>
       list.map((i) => {
         if (part === 'outline') return { ...i, outline: { ...selected.outline } }
         if (part === 'transform') return { ...i, transform: { ...selected.transform } }
+        if (part === 'animation') return { ...i, animation: selected.animation && { ...selected.animation, flipbookSources: [] } }
         return { ...i, text: { ...selected.text, content: i.text.content } }
       }),
     )
@@ -140,20 +141,22 @@ export default function App() {
   }
 
   const download = async () => {
-    setExporting(true)
+    setExporting('作成中…')
     try {
       await ensureFonts(items.map((i) => i.text))
-      const { blob, warnings } = await exportZip(mode, items, sources, mainIndex)
+      const { blob, warnings } = await exportZip(mode, items, sources, mainIndex, (done, total) =>
+        setExporting(`作成中… ${done + 1} / ${total}`),
+      )
       setWarnings(warnings)
       const a = document.createElement('a')
       a.href = URL.createObjectURL(blob)
-      a.download = mode === 'stamp' ? 'line_stamps.zip' : 'line_emoji.zip'
+      a.download = { stamp: 'line_stamps.zip', anim: 'line_animation_stamps.zip', emoji: 'line_emoji.zip' }[mode]
       a.click()
       setTimeout(() => URL.revokeObjectURL(a.href), 1000)
     } catch (e) {
       setWarnings([`書き出しに失敗しました: ${(e as Error).message}`])
     } finally {
-      setExporting(false)
+      setExporting('')
     }
   }
 
@@ -262,17 +265,19 @@ export default function App() {
           </h2>
           <ul className="checklist">
             <li className={countOk ? 'ok' : 'ng'}>
-              枚数: {items.length} 枚（{mode === 'stamp' ? spec.counts.join(' / ') + ' 枚' : '8〜40 個'}）
+              枚数: {items.length} 枚（{mode === 'emoji' ? '8〜40 個' : spec.counts.join(' / ') + ' 枚'}）
             </li>
             <li className="ok">
               {spec.label}画像: {spec.fileName(1)} 〜 {spec.fileName(items.length)}
-              {spec.trim ? `（最大 ${spec.width}×${spec.height}px、余白を自動で詰めて偶数サイズに）` : `（${spec.width}×${spec.height}px）`}
+              {spec.trim
+                ? `（最大 ${spec.width}×${spec.height}px、余白を自動で詰めて偶数サイズに）`
+                : `（${spec.width}×${spec.height}px${spec.animated ? '・APNG、1ファイル300KB以内' : ''}）`}
             </li>
-            {spec.main && <li className="ok">メイン画像: main.png（240×240px、{mainIndex + 1}枚目から作成）</li>}
+            {spec.main && <li className="ok">メイン画像: main.png（240×240px{spec.animated ? '・APNG' : ''}、{mainIndex + 1}枚目から作成）</li>}
             <li className="ok">タブ画像: tab.png（96×74px）</li>
           </ul>
-          <button className="primary" onClick={download} disabled={exporting}>
-            {exporting ? '作成中…' : 'ZIPをダウンロード'}
+          <button className="primary" onClick={download} disabled={!!exporting}>
+            {exporting || 'ZIPをダウンロード'}
           </button>
           {warnings.length > 0 && (
             <ul className="warnings">

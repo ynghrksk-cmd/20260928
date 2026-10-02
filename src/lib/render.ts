@@ -1,3 +1,4 @@
+import { frameState, normalizeAnimation, type FrameState } from './animation'
 import { fontString } from './fonts'
 import { alphaBounds, removeBackground, trimRect, type Bounds } from './pixels'
 import type { ModeSpec } from './specs'
@@ -93,13 +94,14 @@ export function layoutText(ctx: CanvasRenderingContext2D, item: StickerItem, spe
   return { lines, fontSize, lineHeight, box: { x: cx - w / 2, y: cy - h / 2, width: w, height: h } }
 }
 
-function drawText(ctx: CanvasRenderingContext2D, item: StickerItem, spec: ModeSpec) {
+function drawText(ctx: CanvasRenderingContext2D, item: StickerItem, spec: ModeSpec, textScale = 1) {
   const layout = layoutText(ctx, item, spec)
-  if (!layout) return
+  if (!layout || textScale <= 0.01) return
   const t = item.text
   ctx.save()
   ctx.translate(layout.box.x + layout.box.width / 2, layout.box.y + layout.box.height / 2)
   ctx.rotate((t.rotation * Math.PI) / 180)
+  ctx.scale(textScale, textScale)
   ctx.font = fontString(t.font, layout.fontSize)
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
@@ -126,8 +128,16 @@ export function imageScale(source: HTMLCanvasElement, item: StickerItem, spec: M
   return Math.min(sw / source.width, sh / source.height) * item.transform.scale
 }
 
-/** 1枚分をキャンバスサイズ（370×320 など）で描画する */
-export function renderItem(item: StickerItem, source: SourceImage | undefined, spec: ModeSpec) {
+/**
+ * 1枚分をキャンバスサイズ（370×320 など）で描画する。
+ * frame を渡すとアニメーションの1フレーム分の変化を加える。
+ */
+export function renderItem(
+  item: StickerItem,
+  source: SourceImage | undefined,
+  spec: ModeSpec,
+  frame?: FrameState,
+) {
   const out = createCanvas(spec.width, spec.height)
   const ctx = ctx2d(out)
   if (source) {
@@ -135,9 +145,9 @@ export function renderItem(item: StickerItem, source: SourceImage | undefined, s
     let layer = createCanvas(spec.width, spec.height)
     const lctx = ctx2d(layer)
     const tr = item.transform
-    const s = imageScale(img, item, spec)
-    lctx.translate(spec.width / 2 + tr.x, spec.height / 2 + tr.y)
-    lctx.rotate((tr.rotation * Math.PI) / 180)
+    const s = imageScale(img, item, spec) * (frame?.scale ?? 1)
+    lctx.translate(spec.width / 2 + tr.x + (frame?.x ?? 0), spec.height / 2 + tr.y + (frame?.y ?? 0))
+    lctx.rotate(((tr.rotation + (frame?.rotation ?? 0)) * Math.PI) / 180)
     lctx.scale(tr.flipX ? -s : s, s)
     lctx.imageSmoothingQuality = 'high'
     lctx.drawImage(img, -img.width / 2, -img.height / 2)
@@ -146,8 +156,35 @@ export function renderItem(item: StickerItem, source: SourceImage | undefined, s
     }
     ctx.drawImage(layer, 0, 0)
   }
-  drawText(ctx, item, spec)
+  drawText(ctx, item, spec, frame?.textScale)
   return out
+}
+
+/** アニメーションの全フレームを描画する */
+export function renderFrames(item: StickerItem, sources: SourceImage[], spec: ModeSpec) {
+  if (!item.animation) return [renderItem(item, sources.find((s) => s.id === item.sourceId), spec)]
+  const anim = normalizeAnimation(item.animation)
+  const extra = anim.preset === 'flipbook' ? anim.flipbookSources.filter((id) => sources.some((s) => s.id === id)) : []
+  const ids = [item.sourceId, ...extra]
+  return Array.from({ length: anim.frames }, (_, i) => {
+    const state = frameState({ ...anim, flipbookSources: ids.slice(1) as string[] }, i, spec.height)
+    const source = sources.find((s) => s.id === ids[state.sourceIndex])
+    return renderItem(item, source, spec, state)
+  })
+}
+
+/** 余白を詰めずに、全体を指定サイズの中央に収める（アニメのメイン画像用：全フレームで位置をそろえる） */
+export function fitWhole(canvas: HTMLCanvasElement, width: number, height: number) {
+  const out = createCanvas(width, height)
+  const s = Math.min(width / canvas.width, height / canvas.height)
+  const ctx = ctx2d(out)
+  ctx.imageSmoothingQuality = 'high'
+  ctx.drawImage(canvas, (width - canvas.width * s) / 2, (height - canvas.height * s) / 2, canvas.width * s, canvas.height * s)
+  return out
+}
+
+export function canvasPixels(canvas: HTMLCanvasElement) {
+  return ctx2d(canvas).getImageData(0, 0, canvas.width, canvas.height).data
 }
 
 /** 透明な余白を詰める（LINE の規定どおり余白付き・偶数サイズ） */

@@ -1,3 +1,4 @@
+import { defaultAnimation, type AnimationPreset } from './animation'
 import type { Mode } from './specs'
 import type { StickerItem, TextSettings } from './types'
 
@@ -40,12 +41,12 @@ export function defaultText(mode: Mode, content = ''): TextSettings {
   return {
     content,
     font: FONTS[0].value,
-    size: mode === 'stamp' ? 52 : 34,
+    size: mode !== 'emoji' ? 52 : 34,
     color: '#ff5a8a',
     strokeColor: '#ffffff',
-    strokeWidth: mode === 'stamp' ? 10 : 6,
+    strokeWidth: mode !== 'emoji' ? 10 : 6,
     x: 0.5,
-    y: mode === 'stamp' ? 0.84 : 0.8,
+    y: mode !== 'emoji' ? 0.84 : 0.8,
     rotation: 0,
   }
 }
@@ -56,11 +57,15 @@ export function newItem(mode: Mode, sourceId: string | null, content = ''): Stic
     sourceId,
     transform: { scale: 1, x: 0, y: 0, rotation: 0, flipX: false },
     text: defaultText(mode, content),
-    outline: { enabled: true, width: mode === 'stamp' ? 6 : 4, color: '#ffffff' },
+    outline: { enabled: true, width: mode !== 'emoji' ? 6 : 4, color: '#ffffff' },
+    ...(mode === 'anim' ? { animation: defaultAnimation() } : {}),
   }
 }
 
-const imageOffsetY = (mode: Mode) => (mode === 'stamp' ? 22 : 12)
+const imageOffsetY = (mode: Mode) => (mode !== 'emoji' ? 22 : 12)
+
+// 一括生成時に順番に割り当てる動き
+const AUTO_PRESETS: AnimationPreset[] = ['bounce', 'sway', 'pulse', 'textPop', 'shake']
 
 const TEXT_COLORS = ['#ff5a8a', '#3b82f6', '#f59e0b', '#10b981', '#8b5cf6', '#ef4444']
 
@@ -79,6 +84,7 @@ export function generateSet(
     // セリフがある場合は画像を少し小さくして上に寄せ、文字の場所を空ける
     if (phrase) item.transform = { ...item.transform, scale: 0.82, y: -imageOffsetY(mode) }
     if (colorful) item.text.color = TEXT_COLORS[i % TEXT_COLORS.length]
+    if (item.animation) item.animation = defaultAnimation(AUTO_PRESETS[i % AUTO_PRESETS.length])
     return item
   })
 }

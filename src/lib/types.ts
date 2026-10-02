@@ -1,3 +1,4 @@
+import type { AnimationSettings } from './animation'
 import type { RGB } from './pixels'
 
 export interface BackgroundSettings {
@@ -53,4 +54,6 @@ export interface StickerItem {
   transform: ImageTransform
   text: TextSettings
   outline: OutlineSettings
+  /** アニメスタンプのみ */
+  animation?: AnimationSettings
 }
