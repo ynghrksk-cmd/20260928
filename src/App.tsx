@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Editor } from './components/Editor'
 import { ItemCanvas } from './components/ItemCanvas'
 import { SetGenerator } from './components/SetGenerator'
@@ -7,6 +7,7 @@ import { exportZip } from './lib/exportZip'
 import { ensureFonts } from './lib/fonts'
 import { generateSet, newId, newItem } from './lib/presets'
 import { SPECS, type Mode } from './lib/specs'
+import { clearProject, loadProject, saveProject } from './lib/storage'
 import type { BackgroundSettings, SourceImage, StickerItem } from './lib/types'
 
 export default function App() {
@@ -18,6 +19,48 @@ export default function App() {
   const [mainId, setMainId] = useState<string | null>(null)
   const [exporting, setExporting] = useState(false)
   const [warnings, setWarnings] = useState<string[]>([])
+  const [loaded, setLoaded] = useState(false)
+  const [restored, setRestored] = useState(false)
+  const [saveError, setSaveError] = useState('')
+
+  // 前回の作業を復元
+  useEffect(() => {
+    loadProject()
+      .then((p) => {
+        if (!p || (!p.sources.length && !p.items.length)) return
+        setMode(p.mode)
+        setCount(p.count)
+        setSources(p.sources)
+        setItems(p.items)
+        setSelectedId(p.selectedId)
+        setMainId(p.mainId)
+        setRestored(true)
+      })
+      .catch(() => setSaveError('前回の作業を読み込めませんでした'))
+      .finally(() => setLoaded(true))
+  }, [])
+
+  // 変更があるたびに少し待ってから自動保存
+  useEffect(() => {
+    if (!loaded) return
+    const timer = setTimeout(() => {
+      saveProject({ mode, count, sources, items, selectedId, mainId })
+        .then(() => setSaveError(''))
+        .catch(() => setSaveError('自動保存に失敗しました（ブラウザの保存容量が不足している可能性があります）'))
+    }, 600)
+    return () => clearTimeout(timer)
+  }, [loaded, mode, count, sources, items, selectedId, mainId])
+
+  const startOver = async () => {
+    if (!confirm('画像とスタンプをすべて消して、最初から作り直します。よろしいですか？')) return
+    await clearProject().catch(() => {})
+    setSources([])
+    setItems([])
+    setSelectedId(null)
+    setMainId(null)
+    setWarnings([])
+    setRestored(false)
+  }
 
   const spec = SPECS[mode]
   const selectedIndex = items.findIndex((i) => i.id === selectedId)
@@ -131,7 +174,23 @@ export default function App() {
           ))}
         </div>
       </header>
-      <p className="privacy">画像はブラウザの中だけで処理され、サーバーには送信されません。</p>
+      <div className="privacy">
+        <span>画像はブラウザの中だけで処理・保存され、サーバーには送信されません。作業内容は自動で保存されます。</span>
+        {(sources.length > 0 || items.length > 0) && (
+          <button className="link" onClick={startOver}>
+            最初から作り直す
+          </button>
+        )}
+      </div>
+      {restored && (
+        <div className="notice">
+          前回の作業を復元しました。
+          <button className="icon" onClick={() => setRestored(false)} aria-label="閉じる">
+            ×
+          </button>
+        </div>
+      )}
+      {saveError && <p className="error">{saveError}</p>}
 
       <section className="card">
         <h2>

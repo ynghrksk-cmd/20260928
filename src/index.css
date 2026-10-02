@@ -511,3 +511,20 @@ button.small {
 .row.end {
   justify-content: flex-end;
 }
+
+.privacy {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+}
+.notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #e6f9ee;
+  border: 1px solid #b5ead0;
+  border-radius: 10px;
+  padding: 6px 12px;
+  margin-bottom: 16px;
+}

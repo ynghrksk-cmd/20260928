@@ -14,7 +14,8 @@
    - 白フチ：太さ・色を指定
    - 文字：フォント 5 種、文字色・フチ色・太さ・傾き、ドラッグで移動、改行で 2 行
    - 複製・削除・並べ替え、設定を全てのスタンプに適用
-4. **ZIP でダウンロード**：LINE Creators Market にそのままアップロードできる形式
+4. **自動保存**：作業内容はブラウザ（IndexedDB）に自動保存され、ページを開き直しても続きから作業できます
+5. **ZIP でダウンロード**：LINE Creators Market にそのままアップロードできる形式
 
 | 種類 | 画像 | ファイル名 | 付属画像 |
 | --- | --- | --- | --- |
@@ -41,6 +42,7 @@ npm run build    # dist/ に静的ファイルを出力
 - `src/lib/exportZip.ts` … ZIP 書き出し
 - `src/lib/presets.ts` … セリフのプリセット、一括生成
 - `src/lib/split.ts` … 一覧画像のコマ分割
+- `src/lib/storage.ts` … 作業内容の自動保存（IndexedDB）
 - `src/components/` … 画面
 
 ## 公開（GitHub Pages）
