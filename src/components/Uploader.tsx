@@ -3,16 +3,19 @@ import { guessBackground } from '../lib/pixels'
 import { newId } from '../lib/presets'
 import { imageToCanvas } from '../lib/render'
 import type { SourceImage } from '../lib/types'
+import { SplitDialog } from './SplitDialog'
 
 interface Props {
   sources: SourceImage[]
   onAdd: (sources: SourceImage[]) => void
   onRemove: (id: string) => void
+  onReplace: (id: string, parts: SourceImage[]) => void
 }
 
 async function loadFile(file: File): Promise<SourceImage> {
   const bitmap = await createImageBitmap(file)
-  const canvas = imageToCanvas(bitmap)
+  // 一覧画像を分割しても十分な解像度が残るよう、大きめに保持する
+  const canvas = imageToCanvas(bitmap, 2048)
   bitmap.close()
   const ctx = canvas.getContext('2d', { willReadFrequently: true })!
   const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data
@@ -31,10 +34,11 @@ async function loadFile(file: File): Promise<SourceImage> {
   }
 }
 
-export function Uploader({ sources, onAdd, onRemove }: Props) {
+export function Uploader({ sources, onAdd, onRemove, onReplace }: Props) {
   const input = useRef<HTMLInputElement>(null)
   const [dragging, setDragging] = useState(false)
   const [error, setError] = useState('')
+  const [splitting, setSplitting] = useState<SourceImage | null>(null)
 
   const handleFiles = async (files: FileList | null) => {
     if (!files?.length) return
@@ -64,7 +68,7 @@ export function Uploader({ sources, onAdd, onRemove }: Props) {
       >
         <strong>ここに画像をドロップ</strong>
         <span>またはクリックして選択（複数可）</span>
-        <small>別のAIで作ったポーズ違いの画像をまとめて追加できます</small>
+        <small>別のAIで作ったポーズ違いの画像をまとめて追加できます。ポーズ一覧の1枚画像は「分割」で切り分けられます</small>
         <input
           ref={input}
           type="file"
@@ -78,12 +82,25 @@ export function Uploader({ sources, onAdd, onRemove }: Props) {
         />
       </div>
       {error && <p className="error">{error}</p>}
+      {splitting && (
+        <SplitDialog
+          source={splitting}
+          onCancel={() => setSplitting(null)}
+          onSplit={(parts) => {
+            onReplace(splitting.id, parts)
+            setSplitting(null)
+          }}
+        />
+      )}
       {sources.length > 0 && (
         <ul className="source-list">
           {sources.map((s) => (
             <li key={s.id}>
               <SourceThumb source={s} />
               <span title={s.name}>{s.name}</span>
+              <button className="small" onClick={() => setSplitting(s)}>
+                分割
+              </button>
               <button className="icon" onClick={() => onRemove(s.id)} aria-label={`${s.name} を削除`}>
                 ×
               </button>

@@ -44,6 +44,11 @@ export default function App() {
     setItems((list) => list.map((i) => (i.sourceId === id ? { ...i, sourceId: null } : i)))
   }
 
+  const replaceSource = (id: string, parts: SourceImage[]) => {
+    setSources((list) => list.flatMap((s) => (s.id === id ? parts : [s])))
+    setItems((list) => list.map((i) => (i.sourceId === id ? { ...i, sourceId: parts[0]?.id ?? null } : i)))
+  }
+
   const generate = (phrases: string[], colorful: boolean) => {
     const set = generateSet(mode, count, sources.map((s) => s.id), phrases, colorful)
     setItems(set)
@@ -132,7 +137,7 @@ export default function App() {
         <h2>
           <span className="step">1</span>画像をアップロード
         </h2>
-        <Uploader sources={sources} onAdd={(s) => setSources((list) => [...list, ...s])} onRemove={removeSource} />
+        <Uploader sources={sources} onAdd={(s) => setSources((list) => [...list, ...s])} onRemove={removeSource} onReplace={replaceSource} />
       </section>
 
       <section className="card">
