@@ -40,3 +40,14 @@ npm run build    # dist/ に静的ファイルを出力
 - `src/lib/exportZip.ts` … ZIP 書き出し
 - `src/lib/presets.ts` … セリフのプリセット、一括生成
 - `src/components/` … 画面
+
+## 公開（GitHub Pages）
+
+`.github/workflows/deploy.yml` により、`main`（または開発ブランチ）へ push すると自動でビルド・テストしてデプロイします。
+初回のみ以下の設定が必要です。
+
+1. リポジトリの **Settings → General → Danger Zone → Change visibility** で Public にする
+2. **Settings → Pages → Build and deployment → Source** を「GitHub Actions」にする
+3. **Actions** タブで「Deploy to GitHub Pages」を再実行（Run workflow）
+
+公開 URL: `https://<ユーザー名>.github.io/<リポジトリ名>/`
